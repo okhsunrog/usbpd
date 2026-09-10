@@ -2,7 +2,6 @@
 use std::future::pending;
 use std::vec::Vec;
 
-use uom::si::power::watt;
 use usbpd_traits::Driver;
 
 use crate::protocol_layer::message::data::request::{self, EprRequestDataObject};
@@ -16,7 +15,7 @@ use crate::source::device_policy_manager::{
     EprDevicePolicyManager as SourceEprDevicePolicyManager, SourceDpm, SwapType,
 };
 use crate::timers::Timer;
-use crate::units::Power;
+use crate::units::{Power, PowerExt};
 
 /// SPR source capabilities message for testing (includes EPR capable flag).
 /// Captured from real hardware: 5V@3A, 9V@3A, 12V@3A, 15V@3A, 20V@5A, PPS 5-21V@5A
@@ -77,7 +76,7 @@ impl SinkDevicePolicyManager for DummySinkEprDevice {
             if let Some(PowerDataObject::FixedSupply(fixed)) = source_capabilities.pdos().first() {
                 if fixed.epr_mode_capable() {
                     self.requested_epr_caps = true;
-                    return Event::EnterEprMode(Power::new::<watt>(140)); // Dummy 140W PDP
+                    return Event::EnterEprMode(Power::from_milliwatts(140_000)); // Dummy 140W PDP
                 }
             }
         }

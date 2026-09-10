@@ -33,66 +33,98 @@ pub mod timers;
 #[allow(missing_docs)] // FIXME: Docs for the dummy?
 pub mod dummy;
 
-/// This module defines the CGS (centimeter-gram-second) unit system
-/// for use in the USB Power Delivery Protocol layer. These units are
-/// defined using the `uom` (units of measurement) library and are
-/// expressed as `u32` values for milliamps, millivolts, and microwatts.
+/// Units of measurement for the USB Power Delivery protocol layer, based on `uom`.
+///
+/// Quantities are stored as `u32` in the base units of this system: millivolt (mV) for
+/// [`ElectricPotential`](units::ElectricPotential), milliampere (mA) for
+/// [`ElectricCurrent`](units::ElectricCurrent) and microwatt (µW) for [`Power`](units::Power).
+/// Multiplying a current by a potential yields a power, and dividing a power by a potential yields a
+/// current, exactly and without any unit conversion.
+///
+/// The generic `uom` conversions `Quantity::new::<unit>()` and `Quantity::get::<unit>()` build their
+/// conversion factors from `f64` at runtime, which pulls in software floating point and rational
+/// arithmetic on targets without an FPU. Prefer the float-free constructors and getters of the
+/// [`ElectricPotentialExt`](units::ElectricPotentialExt), [`ElectricCurrentExt`](units::ElectricCurrentExt)
+/// and [`PowerExt`](units::PowerExt) traits, which operate directly on the stored base unit value.
 pub mod units {
+    use core::marker::PhantomData;
+
     ISQ!(
         uom::si,
         u32,
         (millimeter, kilogram, second, milliampere, kelvin, mole, candela)
     );
-}
 
-/// Defines a unit for electric current in 50 mA steps.
-pub mod _50milliamperes_mod {
-    unit! {
-        system: uom::si;
-        quantity: uom::si::electric_current;
-
-        @_50milliamperes: 0.05; "_50mA", "_50milliamps", "_50milliamps";
+    /// Float-free construction and readout of an [`ElectricPotential`] in millivolts.
+    pub trait ElectricPotentialExt {
+        /// Create an electric potential from a value in millivolts.
+        fn from_millivolts(millivolts: u32) -> Self;
+        /// Get the electric potential in millivolts.
+        fn millivolts(&self) -> u32;
     }
-}
 
-/// Defines a unit for electric potential in 50 mV steps.
-pub mod _50millivolts_mod {
-    unit! {
-        system: uom::si;
-        quantity: uom::si::electric_potential;
+    impl ElectricPotentialExt for ElectricPotential {
+        #[inline]
+        fn from_millivolts(millivolts: u32) -> Self {
+            Self {
+                dimension: PhantomData,
+                units: PhantomData,
+                value: millivolts,
+            }
+        }
 
-        @_50millivolts: 0.05; "_50mV", "_50millivolts", "_50millivolts";
+        #[inline]
+        fn millivolts(&self) -> u32 {
+            self.value
+        }
     }
-}
 
-/// Defines a unit for electric potential in 20 mV steps.
-pub mod _20millivolts_mod {
-    unit! {
-        system: uom::si;
-        quantity: uom::si::electric_potential;
-
-        @_20millivolts: 0.02; "_20mV", "_20millivolts", "_20millivolts";
+    /// Float-free construction and readout of an [`ElectricCurrent`] in milliamperes.
+    pub trait ElectricCurrentExt {
+        /// Create an electric current from a value in milliamperes.
+        fn from_milliamperes(milliamperes: u32) -> Self;
+        /// Get the electric current in milliamperes.
+        fn milliamperes(&self) -> u32;
     }
-}
 
-/// Defines a unit for electric potential in 25 mV steps.
-/// Used by AVS (Adjustable Voltage Supply) per USB PD 3.2 Table 6.26.
-pub mod _25millivolts_mod {
-    unit! {
-        system: uom::si;
-        quantity: uom::si::electric_potential;
+    impl ElectricCurrentExt for ElectricCurrent {
+        #[inline]
+        fn from_milliamperes(milliamperes: u32) -> Self {
+            Self {
+                dimension: PhantomData,
+                units: PhantomData,
+                value: milliamperes,
+            }
+        }
 
-        @_25millivolts: 0.025; "_25mV", "_25millivolts", "_25millivolts";
+        #[inline]
+        fn milliamperes(&self) -> u32 {
+            self.value
+        }
     }
-}
 
-/// Defines a unit for power in 250 mW steps.
-pub mod _250milliwatts_mod {
-    unit! {
-        system: uom::si;
-        quantity: uom::si::power;
+    /// Float-free construction and readout of a [`Power`] in milliwatts.
+    pub trait PowerExt {
+        /// Create a power from a value in milliwatts.
+        fn from_milliwatts(milliwatts: u32) -> Self;
+        /// Get the power in milliwatts.
+        fn milliwatts(&self) -> u32;
+    }
 
-        @_250milliwatts: 0.25; "_250mW", "_250milliwatts", "_250milliwatts";
+    impl PowerExt for Power {
+        #[inline]
+        fn from_milliwatts(milliwatts: u32) -> Self {
+            Self {
+                dimension: PhantomData,
+                units: PhantomData,
+                value: milliwatts * 1000,
+            }
+        }
+
+        #[inline]
+        fn milliwatts(&self) -> u32 {
+            self.value / 1000
+        }
     }
 }
 
@@ -156,19 +188,38 @@ impl From<DataRole> for bool {
 
 #[cfg(test)]
 mod tests {
-    use uom::si::electric_current::milliampere;
-    use uom::si::electric_potential::millivolt;
+    use uom::si::electric_current::{centiampere, milliampere};
+    use uom::si::electric_potential::{millivolt, volt};
+    use uom::si::power::{milliwatt, watt};
 
-    use crate::_20millivolts_mod::_20millivolts;
-    use crate::units;
+    use crate::units::{ElectricCurrent, ElectricCurrentExt, ElectricPotential, ElectricPotentialExt, Power, PowerExt};
 
+    /// The float-free extension traits must agree with the generic `uom` conversions.
     #[test]
     fn test_units() {
-        let current = units::ElectricCurrent::new::<milliampere>(123);
-        let potential = units::ElectricPotential::new::<millivolt>(4560);
+        let current = ElectricCurrent::from_milliamperes(1230);
+        let potential = ElectricPotential::from_millivolts(4560);
+        let power = Power::from_milliwatts(140_000);
 
-        assert_eq!(current.get::<milliampere>(), 123);
-        assert_eq!(potential.get::<millivolt>(), 4560);
-        assert_eq!(potential.get::<_20millivolts>(), 228);
+        core::assert_eq!(current, ElectricCurrent::new::<centiampere>(123));
+        core::assert_eq!(potential, ElectricPotential::new::<millivolt>(4560));
+        core::assert_eq!(power, Power::new::<watt>(140));
+
+        core::assert_eq!(current.milliamperes(), current.get::<milliampere>());
+        core::assert_eq!(potential.millivolts(), potential.get::<millivolt>());
+        core::assert_eq!(power.milliwatts(), power.get::<milliwatt>());
+        core::assert_eq!(ElectricPotential::from_millivolts(20_000).get::<volt>(), 20);
+    }
+
+    /// Multiplication and division of quantities is exact in the base units of the system.
+    #[test]
+    fn test_units_arithmetic() {
+        let current = ElectricCurrent::from_milliamperes(3000);
+        let potential = ElectricPotential::from_millivolts(20_000);
+        let power = current * potential;
+
+        core::assert_eq!(power, Power::from_milliwatts(60_000));
+        core::assert_eq!(power / potential, current);
+        core::assert_eq!(power / current, potential);
     }
 }

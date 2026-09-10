@@ -1,15 +1,9 @@
 //! Definitions of request data message content.
 use byteorder::{ByteOrder, LittleEndian};
 use proc_bitfield::bitfield;
-use uom::si::electric_current::{self, centiampere};
-use uom::si::{self};
 
 use super::source_capabilities;
-use crate::_20millivolts_mod::_20millivolts;
-use crate::_25millivolts_mod::_25millivolts;
-use crate::_50milliamperes_mod::_50milliamperes;
-use crate::_250milliwatts_mod::_250milliwatts;
-use crate::units::{ElectricCurrent, ElectricPotential};
+use crate::units::{ElectricCurrent, ElectricCurrentExt, ElectricPotential, ElectricPotentialExt, Power, PowerExt};
 
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -49,11 +43,11 @@ impl FixedVariableSupply {
     }
 
     pub fn operating_current(&self) -> ElectricCurrent {
-        ElectricCurrent::new::<centiampere>(self.raw_operating_current().into())
+        ElectricCurrent::from_milliamperes(u32::from(self.raw_operating_current()) * 10)
     }
 
     pub fn max_operating_current(&self) -> ElectricCurrent {
-        ElectricCurrent::new::<centiampere>(self.raw_max_operating_current().into())
+        ElectricCurrent::from_milliamperes(u32::from(self.raw_max_operating_current()) * 10)
     }
 }
 
@@ -90,12 +84,12 @@ impl Battery {
         LittleEndian::write_u32(buf, self.0);
     }
 
-    pub fn operating_power(&self) -> si::u32::Power {
-        si::u32::Power::new::<_250milliwatts>(self.raw_operating_power().into())
+    pub fn operating_power(&self) -> Power {
+        Power::from_milliwatts(u32::from(self.raw_operating_power()) * 250)
     }
 
-    pub fn max_operating_power(&self) -> si::u32::Power {
-        si::u32::Power::new::<_250milliwatts>(self.raw_max_operating_power().into())
+    pub fn max_operating_power(&self) -> Power {
+        Power::from_milliwatts(u32::from(self.raw_max_operating_power()) * 250)
     }
 }
 
@@ -132,11 +126,11 @@ impl Pps {
     }
 
     pub fn output_voltage(&self) -> ElectricPotential {
-        ElectricPotential::new::<_20millivolts>(self.raw_output_voltage().into())
+        ElectricPotential::from_millivolts(u32::from(self.raw_output_voltage()) * 20)
     }
 
     pub fn operating_current(&self) -> ElectricCurrent {
-        ElectricCurrent::new::<_50milliamperes>(self.raw_operating_current().into())
+        ElectricCurrent::from_milliamperes(u32::from(self.raw_operating_current()) * 50)
     }
 }
 
@@ -175,11 +169,11 @@ impl Avs {
     }
 
     pub fn output_voltage(&self) -> ElectricPotential {
-        ElectricPotential::new::<_25millivolts>(self.raw_output_voltage().into())
+        ElectricPotential::from_millivolts(u32::from(self.raw_output_voltage()) * 25)
     }
 
     pub fn operating_current(&self) -> ElectricCurrent {
-        ElectricCurrent::new::<_50milliamperes>(self.raw_operating_current().into())
+        ElectricCurrent::from_milliamperes(u32::from(self.raw_operating_current()) * 50)
     }
 }
 
@@ -380,7 +374,7 @@ impl PowerSource {
             CurrentRequest::Specific(x) => (x, x > pdo.max_current()),
         };
 
-        let mut raw_current = current.get::<electric_current::centiampere>() as u16;
+        let mut raw_current = (current.milliamperes() / 10) as u16;
 
         if raw_current > 0x3ff {
             error!("Clamping invalid current: {} mA", 10 * raw_current);
@@ -450,14 +444,14 @@ impl PowerSource {
             CurrentRequest::Specific(x) => (x, x > max_current),
         };
 
-        let mut raw_current = current.get::<_50milliamperes>() as u16;
+        let mut raw_current = (current.milliamperes() / 50) as u16;
 
         if raw_current > 0x3ff {
             error!("Clamping invalid current: {} mA", 10 * raw_current);
             raw_current = 0x3ff;
         }
 
-        let raw_voltage = voltage.get::<_20millivolts>() as u16;
+        let raw_voltage = (voltage.millivolts() / 20) as u16;
 
         let object_position = index + 1;
         assert!(object_position > 0b0000 && object_position <= 0b1110);
@@ -490,7 +484,9 @@ impl PowerSource {
 
         let IndexedAugmented(pdo, index) = selected.unwrap();
         let max_current = match pdo {
-            source_capabilities::Augmented::Epr(avs) => avs.pd_power() / voltage,
+            source_capabilities::Augmented::Epr(avs) => {
+                ElectricCurrent::from_milliamperes(avs.pd_power().milliwatts() * 1000 / voltage.millivolts())
+            }
             _ => return Err(Error::VoltageMismatch),
         };
 
@@ -499,7 +495,7 @@ impl PowerSource {
             CurrentRequest::Specific(x) => (x, x > max_current),
         };
 
-        let mut raw_current = current.get::<_50milliamperes>() as u16;
+        let mut raw_current = (current.milliamperes() / 50) as u16;
 
         if raw_current > 0x7f {
             error!("Clamping invalid AVS current: {} mA", 50 * raw_current);
@@ -509,7 +505,7 @@ impl PowerSource {
         // AVS voltage is in 25 mV units with LSB 2 bits = 0 (effective 100 mV steps)
         // Per USB PD 3.2 Table 6.26: "Output voltage in 25 mV units,
         // the least two significant bits Shall be set to zero"
-        let raw_voltage = (voltage.get::<_25millivolts>() as u16) & !0x3;
+        let raw_voltage = (voltage.millivolts() / 25) as u16 & !0x3;
 
         let object_position = index + 1;
         assert!(object_position > 0b0000 && object_position <= 0b1110);

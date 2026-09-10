@@ -6,11 +6,6 @@ use embassy_stm32::ucpd::{self, CcPhy, CcPull, CcSel, CcVState, PdPhy, Ucpd};
 use embassy_stm32::{Peri, bind_interrupts, dma, peripherals};
 use embassy_time::{Duration, Timer, with_timeout};
 use panic_probe as _;
-use uom::si::electric_current::{centiampere, milliampere};
-use uom::si::electric_potential::millivolt;
-use uom::si::power::{milliwatt, watt};
-#[cfg(not(feature = "avs"))]
-use usbpd::_50millivolts_mod::_50millivolts;
 #[allow(unused_imports)] // Avs is used in AVS feature mode
 use usbpd::protocol_layer::message::data::request::{
     Avs, CurrentRequest, EprRequestDataObject, FixedVariableSupply, PowerSource, VoltageRequest,
@@ -19,7 +14,7 @@ use usbpd::protocol_layer::message::data::source_capabilities::{Augmented, Power
 use usbpd::sink::device_policy_manager::{DevicePolicyManager, Event};
 use usbpd::sink::policy_engine::Sink;
 use usbpd::timers::Timer as SinkTimer;
-use usbpd::units::Power;
+use usbpd::units::{ElectricCurrentExt, ElectricPotentialExt, Power, PowerExt};
 use usbpd_traits::Driver as SinkDriver;
 
 bind_interrupts!(struct Irqs {
@@ -82,8 +77,8 @@ fn print_pdo(position: u8, pdo: &PowerDataObject) {
                 return;
             }
 
-            let voltage_mv = f.voltage().get::<millivolt>();
-            let current_ma = f.max_current().get::<milliampere>();
+            let voltage_mv = f.voltage().millivolts();
+            let current_ma = f.max_current().milliamperes();
             let power_mw = voltage_mv * current_ma / 1000;
 
             let drp = if f.dual_role_power() { " DRP" } else { "" };
@@ -98,15 +93,15 @@ fn print_pdo(position: u8, pdo: &PowerDataObject) {
             );
         }
         PowerDataObject::Battery(b) => {
-            let min_mv = b.min_voltage().get::<millivolt>();
-            let max_mv = b.max_voltage().get::<millivolt>();
-            let power_mw = b.max_power().get::<milliwatt>();
+            let min_mv = b.min_voltage().millivolts();
+            let max_mv = b.max_voltage().millivolts();
+            let power_mw = b.max_power().milliwatts();
             info!("  PDO[{}]: Battery {}-{}mV @ {}mW", position, min_mv, max_mv, power_mw);
         }
         PowerDataObject::VariableSupply(v) => {
-            let min_mv = v.min_voltage().get::<millivolt>();
-            let max_mv = v.max_voltage().get::<millivolt>();
-            let current_ma = v.max_current().get::<milliampere>();
+            let min_mv = v.min_voltage().millivolts();
+            let max_mv = v.max_voltage().millivolts();
+            let current_ma = v.max_current().milliamperes();
             info!(
                 "  PDO[{}]: Variable {}-{}mV @ {}mA",
                 position, min_mv, max_mv, current_ma
@@ -114,9 +109,9 @@ fn print_pdo(position: u8, pdo: &PowerDataObject) {
         }
         PowerDataObject::Augmented(aug) => match aug {
             Augmented::Spr(pps) => {
-                let min_mv = pps.min_voltage().get::<millivolt>();
-                let max_mv = pps.max_voltage().get::<millivolt>();
-                let current_ma = pps.max_current().get::<milliampere>();
+                let min_mv = pps.min_voltage().millivolts();
+                let max_mv = pps.max_voltage().millivolts();
+                let current_ma = pps.max_current().milliamperes();
                 let limited = if pps.pps_power_limited() { " (limited)" } else { "" };
                 info!(
                     "  PDO[{}]: PPS {}-{}mV @ {}mA{}",
@@ -124,9 +119,9 @@ fn print_pdo(position: u8, pdo: &PowerDataObject) {
                 );
             }
             Augmented::Epr(avs) => {
-                let min_mv = avs.min_voltage().get::<millivolt>();
-                let max_mv = avs.max_voltage().get::<millivolt>();
-                let power_mw = avs.pd_power().get::<milliwatt>();
+                let min_mv = avs.min_voltage().millivolts();
+                let max_mv = avs.max_voltage().millivolts();
+                let power_mw = avs.pd_power().milliwatts();
                 info!("  PDO[{}]: EPR AVS {}-{}mV @ {}mW", position, min_mv, max_mv, power_mw);
             }
             Augmented::Unknown(raw) => {
@@ -258,7 +253,7 @@ impl DevicePolicyManager for Device {
         {
             info!("Source is EPR capable, entering EPR mode");
             self.entered_epr_mode = true;
-            return Event::EnterEprMode(Power::new::<watt>(OPERATIONAL_PDP_WATTS));
+            return Event::EnterEprMode(Power::from_milliwatts(OPERATIONAL_PDP_WATTS * 1000));
         }
         core::future::pending().await
     }
@@ -288,12 +283,12 @@ impl DevicePolicyManager for Device {
                 // Fixed EPR mode (default)
                 #[cfg(not(feature = "avs"))]
                 if let PowerDataObject::FixedSupply(fixed) = pdo {
-                    let voltage_raw = fixed.voltage().get::<_50millivolts>() as u16;
+                    let voltage_raw = (fixed.voltage().millivolts() / 50) as u16;
 
                     // Check if this is 28V (560 in 50 mV units)
                     if voltage_raw == TARGET_EPR_VOLTAGE_RAW {
                         // Request our target current, but cap at source's max
-                        let source_max = fixed.max_current().get::<centiampere>() as u16;
+                        let source_max = (fixed.max_current().milliamperes() / 10) as u16;
                         let current = if TARGET_EPR_CURRENT_RAW > source_max {
                             warn!(
                                 "Source max {} mA < target {} mA, using source max",
@@ -326,14 +321,14 @@ impl DevicePolicyManager for Device {
                 // AVS (Adjustable Voltage Supply) mode
                 #[cfg(feature = "avs")]
                 if let PowerDataObject::Augmented(Augmented::Epr(avs)) = pdo {
-                    let min_mv = avs.min_voltage().get::<millivolt>();
-                    let max_mv = avs.max_voltage().get::<millivolt>();
+                    let min_mv = avs.min_voltage().millivolts();
+                    let max_mv = avs.max_voltage().millivolts();
                     let target_mv = TARGET_AVS_VOLTAGE_V * 1000;
 
                     // Check if this AVS PDO supports our target voltage
                     if min_mv <= target_mv && target_mv <= max_mv {
                         // Calculate max current from PDP (in 50 mA units)
-                        let pdp_mw = avs.pd_power().get::<milliwatt>();
+                        let pdp_mw = avs.pd_power().milliwatts();
                         let max_current_ma = pdp_mw / TARGET_AVS_VOLTAGE_V;
                         let max_current_raw = (max_current_ma / 50) as u16;
 

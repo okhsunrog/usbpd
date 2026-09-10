@@ -8,13 +8,12 @@ use embassy_stm32::ucpd::{self, CcPhy, CcPull, CcSel, CcVState, PdPhy, Ucpd};
 use embassy_stm32::{Peri, bind_interrupts, dma, peripherals};
 use embassy_time::{Duration, Ticker, Timer, with_timeout};
 use panic_probe as _;
-use uom::si::electric_potential;
 use usbpd::protocol_layer::message::data::request::{self, CurrentRequest, VoltageRequest};
 use usbpd::protocol_layer::message::data::source_capabilities::SourceCapabilities;
 use usbpd::sink::device_policy_manager::{DevicePolicyManager, Event};
 use usbpd::sink::policy_engine::Sink;
 use usbpd::timers::Timer as SinkTimer;
-use usbpd::units::ElectricPotential;
+use usbpd::units::{ElectricPotential, ElectricPotentialExt};
 use usbpd_traits::Driver as SinkDriver;
 
 bind_interrupts!(struct Irqs {
@@ -164,7 +163,7 @@ impl DevicePolicyManager for Device<'_> {
             TestCapabilities::Pps3V6 => (
                 request::PowerSource::new_pps(
                     request::CurrentRequest::Highest,
-                    ElectricPotential::new::<electric_potential::millivolt>(3600),
+                    ElectricPotential::from_millivolts(3600),
                     source_capabilities,
                 ),
                 TestCapabilities::Pps4V2,
@@ -172,7 +171,7 @@ impl DevicePolicyManager for Device<'_> {
             TestCapabilities::Pps4V2 => (
                 request::PowerSource::new_pps(
                     request::CurrentRequest::Highest,
-                    ElectricPotential::new::<electric_potential::millivolt>(4200),
+                    ElectricPotential::from_millivolts(4200),
                     source_capabilities,
                 ),
                 TestCapabilities::RequestEprSourceCapabilities,

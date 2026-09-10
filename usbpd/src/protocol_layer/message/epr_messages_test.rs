@@ -11,6 +11,7 @@ use crate::protocol_layer::message::extended::Extended;
 use crate::protocol_layer::message::extended::chunked::{ChunkResult, ChunkedMessageAssembler};
 use crate::protocol_layer::message::header::{DataMessageType, ExtendedMessageType, MessageType};
 use crate::protocol_layer::message::{Message, Payload};
+use crate::units::ElectricPotentialExt;
 
 // ============================================================================
 // Test Fixtures - Real EPR Messages
@@ -106,11 +107,10 @@ fn test_chunked_epr_source_caps_assembly() {
                 }
 
                 // Verify EPR PDO exists at position 7 (28V)
-                use uom::si::electric_potential::volt;
                 if let crate::protocol_layer::message::data::source_capabilities::PowerDataObject::FixedSupply(pdo) =
                     &pdos[7]
                 {
-                    assert_eq!(pdo.voltage().get::<volt>() as f64, 28.0);
+                    assert_eq!(pdo.voltage().millivolts(), 28_000);
                 } else {
                     panic!("PDO[7] should be 28V EPR FixedSupply");
                 }
@@ -141,11 +141,9 @@ fn test_epr_request_parsing() {
         assert_eq!(epr.object_position(), 8, "Should request PDO#8");
 
         // Verify PDO is 28V
-        use uom::si::electric_potential::volt;
-
         use crate::protocol_layer::message::data::source_capabilities::PowerDataObject;
         if let PowerDataObject::FixedSupply(fixed) = epr.pdo {
-            assert_eq!(fixed.voltage().get::<volt>() as f64, 28.0);
+            assert_eq!(fixed.voltage().millivolts(), 28_000);
         } else {
             panic!("Expected FixedSupply PDO in EprRequest");
         }

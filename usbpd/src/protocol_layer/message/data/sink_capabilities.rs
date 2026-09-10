@@ -5,11 +5,8 @@
 //! contains Power Data Objects describing what power levels the sink can operate at.
 use heapless::Vec;
 use proc_bitfield::bitfield;
-use uom::si::electric_current::centiampere;
 
-use crate::_50millivolts_mod::_50millivolts;
-use crate::_250milliwatts_mod::_250milliwatts;
-use crate::units::{ElectricCurrent, ElectricPotential, Power};
+use crate::units::{ElectricCurrent, ElectricCurrentExt, ElectricPotential, ElectricPotentialExt, Power, PowerExt};
 
 /// Fast Role Swap required USB Type-C current.
 /// Per USB PD Spec R3.2 Table 6.17.
@@ -99,12 +96,12 @@ impl FixedSupply {
 
     /// Get the voltage in standard units.
     pub fn voltage(&self) -> ElectricPotential {
-        ElectricPotential::new::<_50millivolts>(self.raw_voltage().into())
+        ElectricPotential::from_millivolts(u32::from(self.raw_voltage()) * 50)
     }
 
     /// Get the operational current in standard units.
     pub fn operational_current(&self) -> ElectricCurrent {
-        ElectricCurrent::new::<centiampere>(self.raw_operational_current().into())
+        ElectricCurrent::from_milliamperes(u32::from(self.raw_operational_current()) * 10)
     }
 
     /// Get the Fast Role Swap required current.
@@ -144,17 +141,17 @@ impl Battery {
 
     /// Get the maximum voltage in standard units.
     pub fn max_voltage(&self) -> ElectricPotential {
-        ElectricPotential::new::<_50millivolts>(self.raw_max_voltage().into())
+        ElectricPotential::from_millivolts(u32::from(self.raw_max_voltage()) * 50)
     }
 
     /// Get the minimum voltage in standard units.
     pub fn min_voltage(&self) -> ElectricPotential {
-        ElectricPotential::new::<_50millivolts>(self.raw_min_voltage().into())
+        ElectricPotential::from_millivolts(u32::from(self.raw_min_voltage()) * 50)
     }
 
     /// Get the operational power in standard units.
     pub fn operational_power(&self) -> Power {
-        Power::new::<_250milliwatts>(self.raw_operational_power().into())
+        Power::from_milliwatts(u32::from(self.raw_operational_power()) * 250)
     }
 }
 
@@ -196,17 +193,17 @@ impl VariableSupply {
 
     /// Get the maximum voltage in standard units.
     pub fn max_voltage(&self) -> ElectricPotential {
-        ElectricPotential::new::<_50millivolts>(self.raw_max_voltage().into())
+        ElectricPotential::from_millivolts(u32::from(self.raw_max_voltage()) * 50)
     }
 
     /// Get the minimum voltage in standard units.
     pub fn min_voltage(&self) -> ElectricPotential {
-        ElectricPotential::new::<_50millivolts>(self.raw_min_voltage().into())
+        ElectricPotential::from_millivolts(u32::from(self.raw_min_voltage()) * 50)
     }
 
     /// Get the operational current in standard units.
     pub fn operational_current(&self) -> ElectricCurrent {
-        ElectricCurrent::new::<centiampere>(self.raw_operational_current().into())
+        ElectricCurrent::from_milliamperes(u32::from(self.raw_operational_current()) * 10)
     }
 }
 
